@@ -5,7 +5,7 @@ async function main(token: string) {
   const [signer] = await ethers.getSigners();
   const flashBot: FlashBot = (await ethers.getContractAt(
     'FlashBot',
-    '0xa37e3Eb0Eef9eE9E7eDE14B82C289B401C390291', // your contract address
+    '0xB0682a5F51AE7A5E598DE992E7e72a30C5FB24e0', // your contract address
     signer
   )) as FlashBot;
 

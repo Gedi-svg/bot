@@ -1,0 +1,388 @@
+// SPDX-License-Identifier: Unlicense
+pragma solidity ^0.7.0;
+pragma abicoder v2;
+
+import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/utils/EnumerableSet.sol';
+import 'hardhat/console.sol';
+
+import './interfaces/IUniswapV2Pair.sol';
+import './interfaces/IWETH.sol';
+import './libraries/Decimal.sol';
+
+struct OrderedReserves {
+    uint256 a1; // base asset
+    uint256 b1;
+    uint256 a2;
+    uint256 b2;
+    uint256 a3;
+    uint256 b3;
+}
+
+struct ArbitrageInfo {
+    address baseToken;
+    address quoteToken;
+    bool baseTokenSmaller;
+    address intermediatePool;
+    address lowerPool; // pool with lower price, denominated in quote asset
+    address higherPool; // pool with higher price, denominated in quote asset
+}
+
+struct CallbackData {
+    address debtPool;
+    address targetPool;
+    bool debtTokenSmaller;
+    address borrowedToken;
+    address debtToken;
+    uint256 debtAmount;
+    uint256 debtTokenOutAmount;
+}
+
+contract Flash is Ownable {
+    using Decimal for Decimal.D256;
+    using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.AddressSet;
+
+    address immutable WETH;
+    EnumerableSet.AddressSet baseTokens;
+    address permissionedPairAddress = address(1);
+
+    event Withdrawn(address indexed to, uint256 indexed value);
+    event BaseTokenAdded(address indexed token);
+    event BaseTokenRemoved(address indexed token);
+    event FlashArbitrageExecuted(address indexed pair0, address indexed pair1, address indexed pair2, bool baseTokenSmaller, uint256 amount0, uint256 returnedAmount);
+
+    constructor(address _WETH) {
+        WETH = _WETH;
+        baseTokens.add(_WETH);
+    }
+
+    receive() external payable {}
+
+    fallback(bytes calldata _input) external returns (bytes memory) {
+        (address sender, uint256 amount0, uint256 amount1, bytes memory data) = abi.decode(_input[4:], (address, uint256, uint256, bytes));
+        uniswapV2Call(sender, amount0, amount1, data);
+    }
+
+    function withdraw() external {
+        uint256 balance = address(this).balance;
+        if (balance > 0) {
+            payable(owner()).transfer(balance);
+            emit Withdrawn(owner(), balance);
+        }
+
+        for (uint256 i = 0; i < baseTokens.length(); i++) {
+            address token = baseTokens.at(i);
+            balance = IERC20(token).balanceOf(address(this));
+            if (balance > 0) {
+                IERC20(token).transfer(owner(), balance);
+            }
+        }
+    }
+
+    function addBaseToken(address token) external onlyOwner {
+        baseTokens.add(token);
+        emit BaseTokenAdded(token);
+    }
+
+    function removeBaseToken(address token) external onlyOwner {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance > 0) {
+            IERC20(token).transfer(owner(), balance);
+        }
+        baseTokens.remove(token);
+        emit BaseTokenRemoved(token);
+    }
+
+    function getBaseTokens() external view returns (address[] memory tokens) {
+        uint256 length = baseTokens.length();
+        tokens = new address[](length);
+        for (uint256 i = 0; i < length; i++) {
+            tokens[i] = baseTokens.at(i);
+        }
+    }
+
+    function baseTokensContains(address token) public view returns (bool) {
+        return baseTokens.contains(token);
+    }
+
+    function isbaseTokenSmaller(address pool0, address pool1, address pool2) internal view returns (bool baseSmaller, address baseToken, address quoteToken) {
+        (address pool0Token0, address pool0Token1) = (IUniswapV2Pair(pool0).token0(), IUniswapV2Pair(pool0).token1());
+        (address pool1Token0, address pool1Token1) = (IUniswapV2Pair(pool1).token0(), IUniswapV2Pair(pool1).token1());
+        (address pool2Token0, address pool2Token1) = (IUniswapV2Pair(pool2).token0(), IUniswapV2Pair(pool2).token1());
+
+        require(pool0Token0 < pool0Token1 && pool1Token0 < pool1Token1 && pool2Token0 < pool2Token1, 'Non standard uniswap AMM pair');
+        require(baseTokensContains(pool0Token0) || baseTokensContains(pool0Token1), 'No base token in pair');
+
+        (baseSmaller, baseToken, quoteToken) = baseTokensContains(pool0Token0)
+            ? (true, pool0Token0, pool0Token1)
+            : (false, pool0Token1, pool0Token0);
+    }
+
+    function getOrderedReserves(address pool0, address pool1, address pool2, bool baseTokenSmaller) internal view returns (address, address, address, OrderedReserves memory orderedReserves) {
+        (uint256 pool0Reserve0, uint256 pool0Reserve1, ) = IUniswapV2Pair(pool0).getReserves();
+        (uint256 pool1Reserve0, uint256 pool1Reserve1, ) = IUniswapV2Pair(pool1).getReserves();
+        (uint256 pool2Reserve0, uint256 pool2Reserve1, ) = IUniswapV2Pair(pool2).getReserves();
+
+        (Decimal.D256 memory price0, Decimal.D256 memory price1, Decimal.D256 memory price2) = baseTokenSmaller
+            ? (
+                Decimal.from(pool0Reserve0).div(pool0Reserve1),
+                Decimal.from(pool1Reserve0).div(pool1Reserve1),
+                Decimal.from(pool2Reserve0).div(pool2Reserve1)
+            )
+            : (
+                Decimal.from(pool0Reserve1).div(pool0Reserve0),
+                Decimal.from(pool1Reserve1).div(pool1Reserve0),
+                Decimal.from(pool2Reserve1).div(pool2Reserve0)
+            );
+
+        (address pool0Token0, address pool0Token1) = (IUniswapV2Pair(pool0).token0(), IUniswapV2Pair(pool0).token1());
+        (address pool1Token0, address pool1Token1) = (IUniswapV2Pair(pool1).token0(), IUniswapV2Pair(pool1).token1());
+        (address pool2Token0, address pool2Token1) = (IUniswapV2Pair(pool2).token0(), IUniswapV2Pair(pool2).token1());
+
+        orderedReserves = baseTokenSmaller
+            ? (
+                pool0Token0,
+                pool0Token1,
+                pool1Token1,
+                pool1Token0,
+                pool2Token1,
+                pool2Token0,
+                pool0Reserve0,
+                pool0Reserve1,
+                pool1Reserve1,
+                pool1Reserve0,
+                pool2Reserve1,
+                pool2Reserve0,
+                price0,
+                price1,
+                price2
+            )
+            : (
+                pool0Token1,
+                pool0Token0,
+                pool1Token0,
+                pool1Token1,
+                pool2Token0,
+                pool2Token1,
+                pool0Reserve1,
+                pool0Reserve0,
+                pool1Reserve0,
+                pool1Reserve1,
+                pool2Reserve0,
+                pool2Reserve1,
+                price0,
+                price1,
+                price2
+            );
+    }
+
+
+    function getProfit(address pair0, address pair1, address pair2, bool baseTokenSmaller) external view returns (uint256 profit) {
+        (address baseToken, address quoteToken) = baseTokenSmaller ? (pair0, IUniswapV2Pair(pair0).token1()) : (IUniswapV2Pair(pair0).token1(), pair0);
+
+        (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(pair0).getReserves();
+        uint256 amount0In = baseTokenSmaller ? reserve0 : reserve1;
+        uint256 amount1Out = baseTokenSmaller ? reserve1 : reserve0;
+
+        (reserve0, reserve1, ) = IUniswapV2Pair(pair1).getReserves();
+        uint256 amountRequired = IUniswapV2Router02(permissionedPairAddress).getAmountOut(amount0In, reserve0, reserve1);
+        uint256 returnedAmount = amount1Out - amountRequired;
+
+        (reserve0, reserve1, ) = IUniswapV2Pair(pair2).getReserves();
+        uint256 amountOut = IUniswapV2Router02(permissionedPairAddress).getAmountOut(amountRequired, reserve0, reserve1);
+
+        profit = amountOut - returnedAmount;
+    }
+
+    function findMostProfitableRoute() external view returns (address, address, address) {
+        uint256 maxProfit = 0;
+        address mostProfitablePair0;
+        address mostProfitablePair1;
+        address mostProfitablePair2;
+
+        for (uint256 i = 0; i < baseTokens.length(); i++) {
+            for (uint256 j = i + 1; j < baseTokens.length(); j++) {
+                for (uint256 k = j + 1; k < baseTokens.length(); k++) {
+                    address pair0 = baseTokens.at(i);
+                    address pair1 = baseTokens.at(j);
+                    address pair2 = baseTokens.at(k);
+
+                    bool baseTokenSmaller;
+                    (baseTokenSmaller, , ) = isbaseTokenSmaller(pair0, pair1, pair2);
+
+                    uint256 profit = getProfit(pair0, pair1, pair2, baseTokenSmaller);
+
+                    if (profit > maxProfit) {
+                        maxProfit = profit;
+                        mostProfitablePair0 = pair0;
+                        mostProfitablePair1 = pair1;
+                        mostProfitablePair2 = pair2;
+                    }
+                }
+            }
+        }
+
+        return (mostProfitablePair0, mostProfitablePair1, mostProfitablePair2);
+    }
+
+    function uniswapV2Call(address _sender, uint256 _amount0, uint256 _amount1, bytes memory _data) internal {
+        address[] memory path = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+
+        require(msg.sender == permissionedPairAddress, 'Unauthorized pair');
+
+        (address token0, address token1, bool baseTokenSmaller, address baseToken, address quoteToken) = abi.decode(_data, (address, address, bool, address, address));
+
+        path[0] = baseToken;
+        path[1] = quoteToken;
+
+        IERC20(token0).safeApprove(address(permissionedPairAddress), _amount0);
+        IERC20(token1).safeApprove(address(permissionedPairAddress), _amount1);
+
+        amounts = IUniswapV2Router02(permissionedPairAddress).swapExactTokensForTokens(_amount0, 0, path, address(this), block.timestamp + 60);
+
+        uint256 amountRequired = Decimal.from(amounts[1]).mul(1003).div(1000).asUint256();
+        IUniswapV2Router02(permissionedPairAddress).swapExactTokensForTokens(amountRequired, 0, path, _sender, block.timestamp + 60);
+    }
+
+    function executeFlashArbitrage(address pair0, address pair1, address pair2) external {
+        (bool baseTokenSmaller, address baseToken, address quoteToken) = isbaseTokenSmaller(pair0, pair1, pair2);
+
+        require(baseTokens.contains(quoteToken), 'Quote token not in base tokens');
+
+        (address token0, address token1) = baseTokenSmaller ? (baseToken, quoteToken) : (quoteToken, baseToken);
+
+        address[] memory path = new address[](2);
+        path[0] = token0;
+        path[1] = token1;
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = IERC20(token0).balanceOf(address(this));
+
+        IERC20(token0).approve(address(permissionedPairAddress), amounts[0]);
+
+        amounts = IUniswapV2Router02(permissionedPairAddress).swapExactTokensForTokens(amounts[0], 0, path, address(this), block.timestamp + 60);
+
+        uint256 amountRequired = Decimal.from(amounts[1]).mul(1003).div(1000).asUint256();
+
+        IERC20(token1).transfer(permissionedPairAddress, amounts[1]);
+
+        IUniswapV2Pair(permissionedPairAddress).swap(amounts[1], amountRequired, address(this), abi.encode(msg.sender, amounts[0], amounts[1], abi.encode(pair0, pair1, pair2)));
+    }
+
+    function calcBorrowAmount(OrderedReserves memory reserves) internal pure returns (uint256 amount) {
+        // Divide all reserves by a common factor to prevent overflow/underflow
+        uint256 min1 = reserves.a1 < reserves.b1 ? reserves.a1 : reserves.b1;
+        uint256 min2 = reserves.a2 < reserves.b2 ? reserves.a2 : reserves.b2;
+        uint256 min3 = reserves.a3 < reserves.b3 ? reserves.a3 : reserves.b3;
+        uint256 min = min1 < min2 ? (min1 < min3 ? min1 : min3) : (min2 < min3 ? min2 : min3);
+
+        // Choose an appropriate number to divide based on the minimum reserve
+        uint256 d = chooseDivisor(min);
+
+        // Perform the quadratic equation calculation
+        (int256 a, int256 b, int256 c) = calculateQuadraticCoefficients(reserves, d);
+
+        // Calculate the solutions for the quadratic equation
+        (int256 x1, int256 x2) = calcSolutionForQuadratic(a, b, c);
+
+        // Choose the appropriate amount based on the valid solution
+        amount = chooseValidAmount(x1, x2, reserves, d);
+    }
+
+    function chooseDivisor(uint256 min) internal pure returns (uint256 d) {
+        if (min > 1e24) {
+            d = 1e20;
+        } else if (min > 1e23) {
+            d = 1e19;
+        } else if (min > 1e22) {
+            d = 1e18;
+        } else if (min > 1e21) {
+            d = 1e17;
+        } else if (min > 1e20) {
+            d = 1e16;
+        } else if (min > 1e19) {
+            d = 1e15;
+        } else if (min > 1e18) {
+            d = 1e14;
+        } else if (min > 1e17) {
+            d = 1e13;
+        } else if (min > 1e16) {
+            d = 1e12;
+        } else if (min > 1e15) {
+            d = 1e11;
+        } else {
+            d = 1e10;
+        }
+    }
+
+    function calculateQuadraticCoefficients(OrderedReserves memory reserves, uint256 d) internal pure returns (int256 a, int256 b, int256 c) {
+        int256 a1 = int256(reserves.a1 / d);
+        int256 a2 = int256(reserves.a2 / d);
+        int256 a3 = int256(reserves.a3 / d);
+        int256 b1 = int256(reserves.b1 / d);
+        int256 b2 = int256(reserves.b2 / d);
+        int256 b3 = int256(reserves.b3 / d);
+
+        // Calculate the coefficients of the quadratic equation
+        a = a1 * b1 - a2 * b2 - a3 * b3;
+        b = 2 * (b1 * b2 * (a1 + a2) + b1 * b3 * (a1 + a3) + b2 * b3 * (a2 + a3));
+        c = b1 * b2 * b3 * (a1 - a2) * (a1 - a3) + b2 * b3 * b1 * (a2 - a1) * (a2 - a3) + b3 * b1 * b2 * (a3 - a1) * (a3 - a2);
+    }
+
+    function chooseValidAmount(int256 x1, int256 x2, OrderedReserves memory reserves, uint256 d) internal pure returns (uint256 amount) {
+        uint256 b1 = reserves.b1 / d;
+        uint256 b2 = reserves.b2 / d;
+        uint256 b3 = reserves.b3 / d;
+
+        // Choose the appropriate amount based on the valid solution
+        amount = (x1 > 0 && uint256(x1) < b1 && uint256(x1) < b2 && uint256(x1) < b3) ? uint256(x1) * d : uint256(x2) * d;
+    }
+
+
+    function calcSolutionForQuadratic(
+        int256 a,
+        int256 b,
+        int256 c
+    ) internal pure returns (int256 x1, int256 x2) {
+        int256 m = b**2 - 4 * a * c;
+
+        // Ensure that the discriminant is non-negative (no complex solutions)
+        require(m >= 0, 'Complex number');
+
+        // Calculate the square root of the discriminant
+        int256 sqrtM = int256(sqrt(uint256(m)));
+
+        // Calculate the solutions using the quadratic formula
+        x1 = (-b + sqrtM) / (2 * a);
+        x2 = (-b - sqrtM) / (2 * a);
+    }
+
+
+
+    function sqrt(uint256 n) internal pure returns (uint256 res) {
+        assert(n > 1);
+
+        // The scale factor is a crude way to turn everything into integer calcs.
+        // Actually do (n * 10 ^ 4) ^ (1/2)
+        uint256 _n = n * 10**6;
+        uint256 c = _n;
+        res = _n;
+
+        uint256 xi;
+        while (true) {
+            xi = (res + c / res) / 2;
+            // Don't need to be too precise to save gas
+            if (res - xi < 1000) {
+                break;
+            }
+            res = xi;
+        }
+        res = res / 10**3;
+    }
+
+}

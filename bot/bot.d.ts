@@ -14,8 +14,11 @@ interface TokenPair {
 
 interface ArbitragePair {
   symbols: string;
-  pairs: [string, string];
+  pairs: string[string, string, string] ;
 }
+
+
+
 
 interface AmmFactories {
   readonly [propName: string]: string;

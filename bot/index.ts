@@ -3,7 +3,7 @@ import { BigNumber } from 'ethers';
 import pool from '@ricokahler/pool';
 import AsyncLock from 'async-lock';
 
-import { FlashBot } from '../typechain/FlashBot';
+import { Flash } from '../typechain/Flash';
 import { Network, tryLoadPairs, getTokens } from './tokens';
 import { getMaticPrice } from './basetoken-price';
 import log from './log';
@@ -28,14 +28,14 @@ async function calcNetProfit(profitWei: BigNumber, address: string, baseTokens: 
 function arbitrageFunc(flashBot: FlashBot, baseTokens: Tokens) {
   const lock = new AsyncLock({ timeout: 1000, maxPending: 10 });
   return async function arbitrage(pair: ArbitragePair) {
-    const [pair0, pair1] = pair.pairs;
+    const [pair0, pair1, pair2] = pair.pairs;
 
     let res: [BigNumber, string] & {
       profit: BigNumber;
       baseToken: string;
     };
     try {
-      res = await flashBot.getProfit(pair0, pair1);
+      res = await flashBot.getProfit(pair0, pair1, pair2);
       log.debug(`Profit on ${pair.symbols}: ${ethers.utils.formatEther(res.profit)}`);
     } catch (err) {
       log.debug(err);
@@ -52,7 +52,7 @@ function arbitrageFunc(flashBot: FlashBot, baseTokens: Tokens) {
       try {
         // lock to prevent tx nonce overlap
         await lock.acquire('flash-bot', async () => {
-          const response = await flashBot.flashArbitrage(pair0, pair1, {
+          const response = await flashBot.flashArbitrage(pair0, pair1, pair2, {
             gasPrice: config.gasPrice,
             gasLimit: config.gasLimit,
           });
@@ -71,7 +71,7 @@ function arbitrageFunc(flashBot: FlashBot, baseTokens: Tokens) {
 
 async function main() {
   const pairs = await tryLoadPairs(Network.POLYGON);
-  const flashBot = (await ethers.getContractAt('FlashBot', config.contractAddr)) as FlashBot;
+  const flashBot = (await ethers.getContractAt('Flash', config.contractAddr)) as Flash;
   const [baseTokens] = getTokens(Network.POLYGON);
 
   log.info('Start arbitraging');

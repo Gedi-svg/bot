@@ -2,10 +2,10 @@
 pragma solidity ^0.7.0;
 pragma abicoder v2;
 
-import '../FlashBot.sol';
+import '../of.sol';
 
-contract InternalFuncTest is FlashBot {
-    constructor() FlashBot(address(1)) {}
+contract InternalFuncTest is FlashArbitrage {
+    constructor() FlashArbitrage(address(0), address(1)) {}
 
     function _calcBorrowAmount(OrderedReserves memory reserves) public pure returns (uint256) {
         return calcBorrowAmount(reserves);
@@ -22,4 +22,6 @@ contract InternalFuncTest is FlashBot {
     function _sqrt(uint256 n) public pure returns (uint256) {
         return sqrt(n);
     }
+    
+        
 }
