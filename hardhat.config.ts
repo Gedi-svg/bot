@@ -6,7 +6,7 @@ import deployer from './.secret';
 
 // const BSC_RPC = 'https://bsc-dataseed.binance.org/';
 const BSC_RPC = 'https://bsc-dataseed1.defibit.io/';
-const POLYGON_RPC = 'https://matic.getblock.io/462d39f8-32bb-4207-a37b-f42dcb6cc1fa/mainnet/';
+const POLYGON_RPC = 'https://polygon-mainnet.g.alchemy.com/v2/DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG';
 
 const config: HardhatUserConfig = {
   solidity: { version: '0.7.6' },

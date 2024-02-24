@@ -2,12 +2,12 @@ import { Contract } from '@ethersproject/contracts';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers, waffle } from 'hardhat';
-import { FlashBot } from '../typechain/FlashBot';
+import { Flash } from '../typechain/Flash';
 import { IWETH } from '../typechain/IWETH';
-
+import {combinationsPolygon} from '../combinations-polygon';
 describe('Flashswap', () => {
   let weth: IWETH;
-  let flashBot: FlashBot;
+  let flashBot: Flash;
 
   const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
   const BUSD =  '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39';
@@ -17,8 +17,8 @@ describe('Flashswap', () => {
     const wethFactory = (await ethers.getContractAt('IWETH', WMATIC)) as IWETH;
     weth = wethFactory.attach(WMATIC) as IWETH;
 
-    const fbFactory = await ethers.getContractFactory('FlashBot');
-    flashBot = (await fbFactory.deploy(WMATIC)) as FlashBot;
+    const fbFactory = await ethers.getContractFactory('Flash');
+    flashBot = (await fbFactory.deploy(WMATIC)) as Flash;
   });
 
   describe('flash swap arbitrage', () => {

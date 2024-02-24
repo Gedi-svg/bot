@@ -11,7 +11,7 @@ interface Config {
 }
 
 const contractAddr = '0xa37e3Eb0Eef9eE9E7eDE14B82C289B401C390291'; // flash bot contract address
-const gasPrice = utils.parseUnits('200', 'gwei');
+const gasPrice = utils.parseUnits('0.1', 'gwei');
 const gasLimit = 310000;
 
 const polygonScanApiKey = '48U9KEJTZBNTDI8W6Y4D99GMSSE6PKW2VD'; // bscscan API key
