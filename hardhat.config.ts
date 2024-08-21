@@ -5,11 +5,17 @@ import '@nomiclabs/hardhat-waffle';
 import deployer from './.secret';
 
 // const BSC_RPC = 'https://bsc-dataseed.binance.org/';
-const BSC_RPC = 'https://bsc-dataseed1.defibit.io/';
+const zk_RPC = 'https://polygonzkevm-mainnet.g.alchemy.com/v2/LgO78ofPwcPs_924mMe11wozolXlvTUj';
 const POLYGON_RPC = 'https://polygon-mainnet.g.alchemy.com/v2/DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG';
 
 const config: HardhatUserConfig = {
-  solidity: { version: '0.7.6' },
+  solidity: { version: '0.7.6',
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }}, 
   networks: {
     hardhat: {
       // loggingEnabled: true,
@@ -26,9 +32,9 @@ const config: HardhatUserConfig = {
       chainId: 0x89,
       accounts: [deployer.private],
     },
-    bsc: {
-      url: BSC_RPC,
-      chainId: 0x38,
+    zk: {
+      url: zk_RPC,
+      chainId: 0x44D,
       accounts: [deployer.private],
     },
   },

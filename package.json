@@ -1,11 +1,11 @@
 {
   "name": "flash-bot",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "ind.js",
   "license": "MIT",
   "scripts": {
     "prettier": "prettier --write 'contracts/**/*.sol'",
-    "bot": "hardhat run --network polygon bot/index.ts"
+    "bot": "hardhat run --network polygon bot/ind.ts"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.0",

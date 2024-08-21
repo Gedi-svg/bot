@@ -1,13 +1,13 @@
 import { ethers } from 'hardhat';
-import { FlashBot } from '../typechain/FlashBot';
+import { FlashArbitrageV3 } from '../typechain/FlashArbitrageV3';
 
 async function main(token: string) {
   const [signer] = await ethers.getSigners();
-  const flashBot: FlashBot = (await ethers.getContractAt(
-    'FlashBot',
-    '0xB0682a5F51AE7A5E598DE992E7e72a30C5FB24e0', // your contract address
+  const flashBot: FlashArbitrageV3 = (await ethers.getContractAt(
+    'FlashArbitrageV3',
+    '0xadbe79ddac961a2ea340e5595c94d67675c0b1b7', // your contract address
     signer
-  )) as FlashBot;
+  )) as FlashArbitrageV3;
 
   await flashBot.addBaseToken(token);
   console.log(`Base token added: ${token}`);
