@@ -9,7 +9,7 @@ const provider = new ethers.providers.JsonRpcProvider({
   timeout: 20000 // Increase timeout to 20 seconds
 });
 
-const wallet = new ethers.Wallet("0xc1101453fdd090e6cf6f3bc2f56564dd8e7c277e76c711ada47e45721fd9ab51", provider);  // Replace with your private key
+const wallet = new ethers.Wallet("", provider);  // Replace with your private key
 
 // Contract addresses
 const flashArbitrageAddress = "0xaDBE79DdAC961a2ea340E5595C94D67675c0b1B7";

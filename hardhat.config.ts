@@ -46,4 +46,4 @@ const config: HardhatUserConfig = {
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
-module.exports = config;
+export default config;

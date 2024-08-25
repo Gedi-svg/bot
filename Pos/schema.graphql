@@ -1,62 +1,30 @@
-type Approval @entity(immutable: true) {
-  id: Bytes!
-  owner: Bytes! # address
-  approved: Bytes! # address
-  tokenId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+# schema.graphql
+
+type Query {
+  pools(where: PoolFilter): [Pool!]!
+  positions(where: PositionFilter): [Position!]!
 }
 
-type ApprovalForAll @entity(immutable: true) {
-  id: Bytes!
-  owner: Bytes! # address
-  operator: Bytes! # address
-  approved: Boolean! # bool
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type Pool {
+  id: ID!
+  poolAddress: String!
+  token0: String!
+  token1: String!
+  fee: String!
 }
 
-type Collect @entity(immutable: true) {
-  id: Bytes!
-  tokenId: BigInt! # uint256
-  recipient: Bytes! # address
-  amount0: BigInt! # uint256
-  amount1: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type Position {
+  id: ID!
+  tokenId: String!
+  poolAddress: String!
 }
 
-type DecreaseLiquidity @entity(immutable: true) {
-  id: Bytes!
-  tokenId: BigInt! # uint256
-  liquidity: BigInt! # uint128
-  amount0: BigInt! # uint256
-  amount1: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+input PoolFilter {
+  token0: String
+  token1: String
+  fee: String
 }
 
-type IncreaseLiquidity @entity(immutable: true) {
-  id: Bytes!
-  tokenId: BigInt! # uint256
-  liquidity: BigInt! # uint128
-  amount0: BigInt! # uint256
-  amount1: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type Transfer @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  tokenId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+input PositionFilter {
+  poolAddress: String
 }

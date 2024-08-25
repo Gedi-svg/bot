@@ -1,41 +1,38 @@
-specVersion: 1.0.0
-indexerHints:
-  prune: auto
-schema:
-  file: ./schema.graphql
+specVersion: 0.0.4
+description: Track Uniswap V3 Pools and Positions
+repository: https://github.com/your-repo/your-subgraph
+schema: ./schema.graphql
 dataSources:
-  - kind: ethereum
-    name: NonfungiblePositionManager
+  - kind: ethereum/contract
+    name: IUniswapV3Factory
+    network: matic
+    source:
+      address: "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+      abi: IUniswapV3Factory
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: typescript
+      file: ./src/pool-mapping.ts
+      entities:
+        - Pool
+      eventHandlers:
+        - event: PoolCreated(indexed address, indexed address, indexed address, uint24)
+          handler: handlePoolCreated
+          
+  - kind: ethereum/contract
+    name: INonfungiblePositionManager
     network: matic
     source:
       address: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
-      abi: NonfungiblePositionManager
-      startBlock: 0
+      abi: INonfungiblePositionManager
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
-      language: wasm/assemblyscript
+      apiVersion: 0.0.6
+      language: typescript
+      file: ./src/position-mapping.ts
       entities:
-        - Approval
-        - ApprovalForAll
-        - Collect
-        - DecreaseLiquidity
-        - IncreaseLiquidity
-        - Transfer
-      abis:
-        - name: NonfungiblePositionManager
-          file: ./abis/NonfungiblePositionManager.json
+        - Position
       eventHandlers:
-        - event: Approval(indexed address,indexed address,indexed uint256)
-          handler: handleApproval
-        - event: ApprovalForAll(indexed address,indexed address,bool)
-          handler: handleApprovalForAll
-        - event: Collect(indexed uint256,address,uint256,uint256)
-          handler: handleCollect
-        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
-          handler: handleDecreaseLiquidity
-        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
-          handler: handleIncreaseLiquidity
-        - event: Transfer(indexed address,indexed address,indexed uint256)
-          handler: handleTransfer
-      file: ./src/nonfungible-position-manager.ts
+        - event: PositionCreated(indexed address, indexed address, uint256)
+          handler: handlePositionCreated
