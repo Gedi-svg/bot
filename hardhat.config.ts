@@ -4,8 +4,8 @@ import '@nomiclabs/hardhat-waffle';
 
 import deployer from './.secret';
 
-// const BSC_RPC = 'https://bsc-dataseed.binance.org/';
-const zk_RPC = 'https://polygonzkevm-mainnet.g.alchemy.com/v2/LgO78ofPwcPs_924mMe11wozolXlvTUj';
+const BSC_RPC = 'https://bsc-mainnet.infura.io/v3/78225fe5e158427882e12e14bb140e1d';
+const zk_RPC = 'https://127.0.0.1:8551';
 const POLYGON_RPC = 'https://polygon-mainnet.g.alchemy.com/v2/DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG';
 
 const config: HardhatUserConfig = {
@@ -32,9 +32,9 @@ const config: HardhatUserConfig = {
       chainId: 0x89,
       accounts: [deployer.private],
     },
-    zk: {
-      url: zk_RPC,
-      chainId: 0x44D,
+    bsc: {
+      url: BSC_RPC,
+      chainId: 0x38,
       accounts: [deployer.private],
     },
   },

@@ -41,81 +41,23 @@ describe("FlashArbitrageV3", function () {
     console.log("pool address:", poolAddress);
   }
 
-  async function getPositionId(signer: SignerWithAddress, tokenA: string, tokenB: string): Promise<number> {
-    const positionManager = (await ethers.getContractAt("INonfungiblePositionManager", posman, signer)) as INonfungiblePositionManager;
-    const balance = await positionManager.balanceOf(poolAddress);
-    
-    for (let i = 0; i < balance.toNumber(); i++) {
-      const tokenId = await positionManager.tokenOfOwnerByIndex(signer, i);
-      const { token0, token1 } = await positionManager.positions(tokenId);
-      if ((token0 === tokenA && token1 === tokenB) || (token0 === tokenB && token1 === tokenA)) {
-        return tokenId.toNumber();
-      }
-    }
-    throw new Error(`No position found for pair ${tokenA}-${tokenB}`);
-  }
-
-  it("Should calculate reserves and profits correctly", async function () {
-    const poolAddressAB = await getPoolAddress(WMATIC, ETH);
-    const poolAddressBC = await getPoolAddress(ETH, UNI);
-    const poolAddressCA = await getPoolAddress(UNI, WMATIC);
-
-    const positionIdAB = await getPositionId(signer, WMATIC, ETH);
-    const positionIdBC = await getPositionId(signer, ETH, UNI );
-    const positionIdCA = await getPositionId(signer, UNI, WMATIC );
   
-    const poolData = {
-      poolAddressAB,
-      poolAddressBC,
-      poolAddressCA,
-      positionIdAB,
-      positionIdBC,
-      positionIdCA,
-      borrowAmount: ethers.utils.parseEther("1"),
-      profit1: 0,
-      profit2: 0,
-      profit3: 0
-    };
 
-    // Mock paths
-    const path1 = [WMATIC, ETH];
-    const path2 = [ETH, UNI];
-    const path3 = [UNI, WMATIC];
-
-    // Get and log ordered reserves
-    const [reserveA1, reserveB2, reserveC2] = await flashArbitrage.connect(signer).getOrderedReserves(path1[0], path1[1], poolData);
-    console.log("Reserves:", reserveA1.toString(), reserveB2.toString(), reserveC2.toString());
-
-    // Calculate and log profits
-    const profit = await flashArbitrage.connect(signer).calculateProfit(reserveA1, reserveB2, reserveC2, 10, poolData.borrowAmount);
-    console.log("Calculated Profit:", profit.toString());
-
-    // Ensure profit is calculated correctly
-    expect(profit).to.be.gt(0);
-
-    // Test chooseBestPath function
-    const bestProfit = await flashArbitrage.connect(signer).chooseBestPath(path1, path2, path3, poolData);
-    console.log("Best Profit:", bestProfit.toString());
-
-    expect(bestProfit).to.be.gt(0);
-  });
 
   it("Should execute flash arbitrage successfully", async function () {
     const poolAddressAB = await getPoolAddress(WMATIC, ETH);
     const poolAddressBC = await getPoolAddress(ETH, UNI);
     const poolAddressCA = await getPoolAddress(UNI, WMATIC);
 
-    const positionIdAB = await getPositionId(signer, WMATIC, ETH);
-    const positionIdBC = await getPositionId(signer, ETH, UNI);
-    const positionIdCA = await getPositionId(signer, UNI, WMATIC);
+    console.log("pool address:", poolAddressAB);
+    console.log("pool address:", poolAddressBC);
+    console.log("pool address:", poolAddressCA);
 
+    
     const poolData = {
       poolAddressAB,
       poolAddressBC,
       poolAddressCA,
-      positionIdAB,
-      positionIdBC,
-      positionIdCA,
       borrowAmount: ethers.utils.parseEther("10"),
       profit1: 0,
       profit2: 0,

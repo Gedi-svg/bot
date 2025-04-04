@@ -255,3 +255,302 @@ describe('Flash Arbitrage', function () {
     expect(await flashContract.getTokenBalance(tokenC)).to.equal(0);
   });
 });
+
+
+
+
+
+
+
+
+
+
+function uniswapV3Call(
+    address sender,
+    bytes memory data
+) public {
+    // Access control: Ensure only the permissioned pair can call this
+    require(msg.sender == permissionedPairAddress, "Non-permissioned address call");
+    require(sender == address(this), "Not from this contract");
+
+    // Decode the callback data to get the relevant information
+    CallbackData memory info = abi.decode(data, (CallbackData));
+
+    // Perform the first hop: from the borrowed token to the intermediate token
+    ISwapRouter.ExactInputParams memory params1 = ISwapRouter.ExactInputParams({
+        path: abi.encodePacked(
+            info.borrowedToken, uint24(3000), // Swap from borrowed token to intermediate
+            info.intermediateToken, uint24(3000)  // Intermediate token for the next hop
+        ),
+        recipient: address(this),
+        deadline: block.timestamp + 60,
+        amountIn: info.debtAmount,
+        amountOutMinimum: 1 // Minimum output for slippage protection
+    });
+
+    uint256 intermediateAmount = swapRouter.exactInput(params1);
+
+    // Perform the second hop: from the intermediate token to the debt token
+    ISwapRouter.ExactInputParams memory params2 = ISwapRouter.ExactInputParams({
+        path: abi.encodePacked(
+            info.intermediateToken, uint24(3000),  // Intermediate token
+            info.debtToken // Final token to repay the debt
+        ),
+        recipient: address(this),
+        deadline: block.timestamp + 60,
+        amountIn: intermediateAmount,
+        amountOutMinimum: 1 // Ensure profitable outcome
+    });
+
+    uint256 outputAmount = swapRouter.exactInput(params2);
+
+    // Check if we need to swap back from the debt token to the borrowed token
+    if (info.borrowedToken != info.debtToken) {
+        ISwapRouter.ExactInputParams memory params3 = ISwapRouter.ExactInputParams({
+            path: abi.encodePacked(
+                info.debtToken, uint24(3000), // Swap from debt token back to borrowed token
+                info.borrowedToken
+            ),
+            recipient: address(this),
+            deadline: block.timestamp + 60,
+            amountIn: outputAmount,
+            amountOutMinimum: 1 // Ensure minimum output
+        });
+
+        // Perform the swap back to the borrowed token
+        outputAmount = swapRouter.exactInput(params3);
+    }
+
+    // Repay the debt pool with the received amount from the final hop or the swap back
+    require(outputAmount >= info.debtAmount, "Insufficient output to cover debt");
+    IERC20(info.borrowedToken).safeTransfer(info.debtPool, info.debtAmount);
+
+    // After the swap is complete, check profit (optional but recommended for extra safety)
+    // Ensure we made a profit after repaying the debt
+    uint256 profit = IERC20(info.borrowedToken).balanceOf(address(this)) - info.debtAmount;
+    require(profit > 0, "No profit made from arbitrage");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+    function executeSwap(
+        address[] memory path, 
+        uint256 amountIn, 
+        uint256 expectedProfit // Pass arbInfo as an argument
+    ) internal {
+        ArbitrageInfo memory arbInfo;
+        ReserveDataBundle memory reserveBundle;
+        // Add slippage protection: Set minimum output to ensure profitability
+        uint256 minOutput = expectedProfit > 0 ? expectedProfit : 1;
+
+        // Assuming reserveBundle has been filled with sqrtPriceX96 values before
+        uint160[3] memory sqrtPriceLimits = reserveBundle.sqrtPriceX96;
+
+        // Get the debt amount needed for the first swap (borrow amount)
+        uint256 debtAmount = getAmountInWithQuoter(amountIn, path[0], path[1], 3000, sqrtPriceLimits[0]); // Pool fee 0.3%
+
+        // Ensure we are correctly setting the CallbackData struct for the swap
+        CallbackData memory callbackData = CallbackData({
+            debtPool: arbInfo.lowerPool,             // Pool with lower price for borrowing
+            targetPool: arbInfo.middlePool,          // Next pool for the swap
+            finalPool: arbInfo.higherPool,           // Final pool to repay the debt
+            debtTokenSmaller: arbInfo.baseSmaller,   // Whether the base token is smaller
+            borrowedToken: arbInfo.baseSmaller ? arbInfo.quoteToken0 : arbInfo.baseToken0, // Borrowed token
+            intermediateToken: path[1],              // Intermediate token for the multi-hop swap
+            debtToken: arbInfo.baseSmaller ? arbInfo.baseToken0 : arbInfo.quoteToken0, // Debt token to be repaid
+            debtAmount: debtAmount,                   // Amount borrowed
+            debtTokenOutAmount: minOutput             // To be set during the swap
+        });
+
+        // Set the permissioned pair to the lower pool for callback origin authentication
+        permissionedPairAddress = arbInfo.lowerPool;
+
+        // Ensure the contract has enough balance before the borrowing process
+        uint256 balanceBefore = IERC20(callbackData.borrowedToken).balanceOf(address(this));
+
+        // Perform the first swap in the lower pool (borrow token)
+        IUniswapV3Pool(arbInfo.lowerPool).swap(
+            address(this),            // Recipient of the swap
+            arbInfo.baseSmaller,      // True if swapping token0 for token1, false otherwise
+            -int256(debtAmount),      // Negative value to initiate a flash swap
+            sqrtPriceLimits[0],       // Sqrt price limit for the first pool
+            abi.encode(callbackData)   // Pass encoded callback data for Uniswap V3 callback
+        );
+
+        // Set the permissioned pair to the middle pool for the second swap
+        permissionedPairAddress = arbInfo.middlePool;
+
+        // Get the amount out for the second swap (intermediate token)
+        uint256 baseTokenOutAmount1 = getAmountOutWithQuoter(debtAmount, path[0], path[1], 3000, sqrtPriceLimits[0]);
+
+        // Perform the second swap in the middle pool
+        IUniswapV3Pool(arbInfo.middlePool).swap(
+            address(this),            // Recipient of the swap
+            arbInfo.baseSmaller,      // True if swapping token0 for token1, false otherwise
+            int256(baseTokenOutAmount1), // Positive value for a normal swap
+            sqrtPriceLimits[1],       // Sqrt price limit for the second pool
+            abi.encode(callbackData)   // Pass encoded callback data for Uniswap V3 callback
+        );
+
+        // Set the permissioned pair to the final pool for the final swap
+        permissionedPairAddress = arbInfo.higherPool;
+
+        // Get the amount out for the final swap (repaying the debt)
+        uint256 finalTokenOutAmount = getAmountOutWithQuoter(baseTokenOutAmount1, path[1], path[2], 3000, sqrtPriceLimits[1]);
+
+        // Perform the final swap in the higher pool
+        IUniswapV3Pool(arbInfo.higherPool).swap(
+            address(this),            // Recipient of the swap
+            arbInfo.baseSmaller,      // True if swapping token0 for token1, false otherwise
+            int256(finalTokenOutAmount), // Positive value for a normal swap
+            sqrtPriceLimits[2],       // Sqrt price limit for the third pool
+            abi.encode(callbackData)   // Pass encoded callback data for Uniswap V3 callback
+        );
+
+        // After all swaps are done, check the balance after the swaps
+        uint256 balanceAfter = IERC20(callbackData.borrowedToken).balanceOf(address(this));
+        require(balanceAfter > balanceBefore, "Losing money");
+
+        // If the token is WETH, withdraw to ETH
+        if (callbackData.borrowedToken == WETH) {
+            IWETH(callbackData.borrowedToken).withdraw(balanceAfter);
+        }
+
+        // Reset the permissioned pair after the swap is completed
+        permissionedPairAddress = address(1);
+
+        emit FlashArbitrageExecuted(amountIn, minOutput);
+    }
+
+
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes memory data
+    ) public override{
+        // Access control: Ensure only the permissioned pair can call this
+        require(msg.sender == permissionedPairAddress, "Non-permissioned address call");
+        
+
+        // Decode the callback data to get the relevant information
+        CallbackData memory info = abi.decode(data, (CallbackData));
+
+        // Determine if we need to send amount0 or amount1
+        if (amount0Delta > 0) {
+            // Sending borrowedToken for amount0
+            IERC20(info.borrowedToken).safeTransfer(msg.sender, uint256(amount0Delta));
+        } else if (amount1Delta > 0) {
+            // Sending debtToken for amount1
+            IERC20(info.debtToken).safeTransfer(msg.sender, uint256(amount1Delta));
+        }
+        // Perform the first hop: from the borrowed token to the intermediate token
+        ISwapRouter.ExactInputParams memory params1 = ISwapRouter.ExactInputParams({
+            path: abi.encodePacked(
+                info.borrowedToken, uint24(3000), // Swap from borrowed token to intermediate
+                info.intermediateToken, uint24(3000)  // Intermediate token for the next hop
+            ),
+            recipient: address(this),
+            deadline: block.timestamp + 60,
+            amountIn: info.debtAmount,
+            amountOutMinimum: 1 // Minimum output for slippage protection
+        });
+
+        uint256 intermediateAmount = swapRouter.exactInput(params1);
+
+        // Perform the second hop: from the intermediate token to the debt token
+        ISwapRouter.ExactInputParams memory params2 = ISwapRouter.ExactInputParams({
+            path: abi.encodePacked(
+                info.intermediateToken, uint24(3000),  // Intermediate token
+                info.debtToken // Final token to repay the debt
+            ),
+            recipient: address(this),
+            deadline: block.timestamp + 60,
+            amountIn: intermediateAmount,
+            amountOutMinimum: 1 // Ensure profitable outcome
+        });
+
+        uint256 outputAmount = swapRouter.exactInput(params2);
+
+        // Check if we need to swap back from the debt token to the borrowed token
+        if (info.borrowedToken != info.debtToken) {
+            ISwapRouter.ExactInputParams memory params3 = ISwapRouter.ExactInputParams({
+                path: abi.encodePacked(
+                    info.debtToken, uint24(3000), // Swap from debt token back to borrowed token
+                    info.borrowedToken
+                ),
+                recipient: address(this),
+                deadline: block.timestamp + 60,
+                amountIn: outputAmount,
+                amountOutMinimum: 1 // Ensure minimum output
+            });
+
+            // Perform the swap back to the borrowed token
+            outputAmount = swapRouter.exactInput(params3);
+        }
+
+        // After the swaps, calculate the profit
+        uint256 contractBalance = IERC20(info.borrowedToken).balanceOf(address(this));
+        require(contractBalance >= info.debtAmount, "Insufficient output to cover debt");
+
+        // Separate profit before repaying the debt
+        uint256 profit = contractBalance - info.debtAmount;
+
+        // Take profit by transferring to a specified address (owner or profit-taking contract)
+        IERC20(info.borrowedToken).safeTransfer(address(this), profit);
+
+        // Repay the debt pool with the remaining amount
+        IERC20(info.borrowedToken).safeTransfer(info.debtPool, info.debtAmount);
+
+        // Emit an event with the profit details
+        emit FlashArbitrageExecuted(info.debtAmount, profit);
+    }*
+
+
+
+
+
+
+
+
+
+
+
+
+    function calculateProfit(
+        uint256 borrowAmount,
+        address[] memory path,
+        uint160[3] memory sqrtPrices // Token path for arbitrage
+    ) public returns (uint256 profit) {
+        // Ensure the path has at least 2 tokens (for arbitrage to make sense)
+        require(path.length == 3, "Path must have 3 tokens for 3-pool arbitrage");
+
+        // Use the Quoter to calculate debt amount (input amount needed to get the borrowed amount)
+        uint256 debtAmount = getAmountInWithQuoter(borrowAmount, path[0], path[1], 3000, sqrtPrices[0]); // Pool fee 0.3%
+
+        // Sell the borrowed token (path[0]) for the middle token (path[1]) in the second pool
+        uint256 baseTokenOutAmount1 = getAmountOutWithQuoter(debtAmount, path[1], path[2], 3000, sqrtPrices[1]);
+
+        // Sell the middle token (path[1]) for the final token (path[2]) in the third pool
+        uint256 finalTokenOutAmount = getAmountOutWithQuoter(baseTokenOutAmount1, path[2], path[0], 3000, sqrtPrices[2]);
+
+        // Check if the arbitrage is profitable
+        if (finalTokenOutAmount < debtAmount) {
+            profit = 0; // No profit, arbitrage not successful
+        } else {
+            profit = finalTokenOutAmount.sub(debtAmount); // Calculate the net profit
+        }
+
+        // Return the calculated profit
+        return profit;
+    }

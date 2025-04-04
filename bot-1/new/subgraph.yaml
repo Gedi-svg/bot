@@ -1,41 +1,30 @@
-specVersion: 1.0.0
-indexerHints:
-  prune: auto
+specVersion: 0.0.4
+description: Subgraph to fetch position IDs of a pool
+repository: https://github.com/<your-repo>
+
 schema:
   file: ./schema.graphql
+
 dataSources:
-  - kind: ethereum
+  - kind: ethereum/contract
     name: NonfungiblePositionManager
     network: matic
     source:
-      address: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+      address: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88" # Replace with actual address
       abi: NonfungiblePositionManager
-      startBlock: 0
+      startBlock: 61184600 # Replace with the correct start block
+
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.6
       language: wasm/assemblyscript
+      file: ./src/mapping.ts
       entities:
-        - Approval
-        - ApprovalForAll
-        - Collect
-        - DecreaseLiquidity
-        - IncreaseLiquidity
-        - Transfer
+        - Pool
+        - Position
       abis:
         - name: NonfungiblePositionManager
           file: ./abis/NonfungiblePositionManager.json
       eventHandlers:
-        - event: Approval(indexed address,indexed address,indexed uint256)
-          handler: handleApproval
-        - event: ApprovalForAll(indexed address,indexed address,bool)
-          handler: handleApprovalForAll
-        - event: Collect(indexed uint256,address,uint256,uint256)
-          handler: handleCollect
-        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
-          handler: handleDecreaseLiquidity
-        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
-          handler: handleIncreaseLiquidity
-        - event: Transfer(indexed address,indexed address,indexed uint256)
+        - event: "Transfer(indexed address,indexed address,indexed uint256)"
           handler: handleTransfer
-      file: ./src/nonfungible-position-manager.ts
