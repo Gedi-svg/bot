@@ -1,0 +1,30 @@
+# schema.graphql
+
+type Query {
+  pools(where: PoolFilter): [Pool!]!
+  positions(where: PositionFilter): [Position!]!
+}
+
+type Pool {
+  id: ID!
+  poolAddress: String!
+  token0: String!
+  token1: String!
+  fee: String!
+}
+
+type Position {
+  id: ID!
+  tokenId: String!
+  poolAddress: String!
+}
+
+input PoolFilter {
+  token0: String
+  token1: String
+  fee: String
+}
+
+input PositionFilter {
+  poolAddress: String
+}

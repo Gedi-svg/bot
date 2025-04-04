@@ -1,5 +1,5 @@
 import { ethers } from 'hardhat';
-import { FlashArbitrage } from '../typechain/FlashArbitrage';
+import { FlashArbitrageV3 } from '../typechain/FlashArbitrageV3';
 import { IWETH } from '../typechain/IWETH';
 import { Network, tryLoadCombinations, getTokens, TokenCombination } from './Toke';
 import { getMaticPrice } from './basetoken-price';
@@ -27,7 +27,7 @@ async function calcNetProfit(profitWei: ethers.BigNumber, address: string, baseT
   return profit - gasCost;
 }
 
-function arbitrageFunc(flashContract: FlashArbitrage, baseTokens: Tokens): ArbitrageFunction {
+function arbitrageFunc(flashContract: FlashArbitrageV3, baseTokens: Tokens): ArbitrageFunction {
   return async function arbitrage(tokenCombination: TokenCombination) {
     const { symbols, addresses } = tokenCombination;
 
@@ -36,7 +36,7 @@ function arbitrageFunc(flashContract: FlashArbitrage, baseTokens: Tokens): Arbit
       baseToken: string;
     };
     try {
-      res = await flashContract.getProfit(addresses[0], addresses[1], addresses[2]);
+      res = await flashContract.getProfit(addresses[0], addresses[1], gasFee, vaultContract.address);
       log.debug(`Profit on ${symbols}: ${ethers.utils.formatEther(res.profit)}`);
     } catch (err) {
       log.debug(err);
@@ -52,7 +52,7 @@ function arbitrageFunc(flashContract: FlashArbitrage, baseTokens: Tokens): Arbit
       log.info(`Calling flash arbitrage for ${symbols}, net profit: ${netProfit}`);
       try {
         // lock to prevent tx nonce overlap
-        const response = await flashContract.flashArbitrage(addresses[0], addresses[1], addresses[2], {
+        const response = await flashContract.executeFlashArbitrage(addresses[0], addresses[1], addresses[2], amountIn, 0, gasFee, vaultContract.address, {
           gasPrice: config.gasPrice,
           gasLimit: config.gasLimit,
         });
@@ -70,7 +70,7 @@ function arbitrageFunc(flashContract: FlashArbitrage, baseTokens: Tokens): Arbit
 
 async function main() {
   const combinations = await tryLoadCombinations(Network.POLYGON);
-  const flashContract = (await ethers.getContractAt('FlashArbitrage', config.contractAddr)) as FlashArbitrage;
+  const flashContract = (await ethers.getContractAt('FlashArbitrageV3', config.contractAddr)) as FlashArbitrageV3;
   const [baseTokens] = getTokens(Network.POLYGON);
 
   log.info('Start arbitraging');

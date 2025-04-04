@@ -1,12 +1,12 @@
 import { ethers, run } from 'hardhat';
-import { FlashBot } from '../typechain/FlashBot';
+import { FlashBot } from '../typechain/FlashArbitrageV3';
 
 async function main() {
   await run('compile');
   const flashBot: FlashBot = (await ethers.getContractAt(
-    'FlashBot',
-    '0xa37e3Eb0Eef9eE9E7eDE14B82C289B401C390291' // contract address
-  )) as FlashBot;
+    'FlashArbitrageV3',
+    '0xadbe79ddac961a2ea340e5595c94d67675c0b1b7' // contract address
+  )) as FlashArbitrageV3;
 
   const owner = await flashBot.owner();
   console.log(`Owner: ${owner}`);

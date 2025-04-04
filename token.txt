@@ -49,3 +49,209 @@ const wethFactory = (await ethers.getContractAt('IWMATIC', WMATIC)) as IWMATIC;
 
     const fbFactory = await ethers.getContractFactory('FlashBot');
     flashBot = (await fbFactory.deploy(WMATIC)) as FlashBot;
+
+
+    zk pass: eR5Uus@6kvmpFjk
+
+    ---------------------------------------------------------------------------
+
+    async function updateCombinations(network: Network): Promise<TokenCombination[]> {
+  // Fetch base and quote tokens for the network
+  const [baseTokens, quoteTokens] = getTokens(network);
+
+  let combinations: TokenCombination[] = [];
+
+  // Generate combinations of three tokens
+  for (const baseKey in baseTokens) {
+    const baseToken = baseTokens[baseKey];
+    for (const quote1Key in quoteTokens) {
+      const quoteToken1 = quoteTokens[quote1Key];
+      for (const quote2Key in quoteTokens) {
+        if (quote1Key === quote2Key) continue; // Ensure different tokens
+        const quoteToken2 = quoteTokens[quote2Key];
+        
+        // Construct combination
+        const combination: TokenCombination = {
+          symbols: `${baseToken.symbol}-${quoteToken1.symbol}-${quoteToken2.symbol}`,
+          addresses: [baseToken.address, quoteToken1.address, quoteToken2.address],
+          pairs: []
+        };
+        combinations.push(combination);
+      }
+    }
+  }
+  let factories: Contract[] = [];
+  const factoryAddrs = getFactories(network);
+  for (const key in factoryAddrs) {
+    const addr = factoryAddrs[key]; // Assume a single factory in this case
+    const factory = new ethers.Contract(addr, ['function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)'], ethers.provider);
+    factories.push(factory);
+  }
+  const feeTiers = [500, 3000, 10000]; // Define the fee tiers you are interested in
+  
+  for (const combination of combinations) {
+    // Try to fetch the pool for each fee tier and add it to the pairs array if it exists
+    const [pool0, pool1, pool2] = await Promise.all(
+      feeTiers.map(fee => Promise.all([
+        factories[0].getPool(combination.addresses[0], combination.addresses[1], fee),
+        factories[1].getPool(combination.addresses[1], combination.addresses[2], fee),
+        factories[2].getPool(combination.addresses[2], combination.addresses[0], fee)
+      ]))
+    );
+
+    // Add valid pools to the combination
+    combination.pairs.push(
+      pool0.find(pool => pool !== ethers.constants.AddressZero),
+      pool1.find(pool => pool !== ethers.constants.AddressZero),
+      pool2.find(pool => pool !== ethers.constants.AddressZero)
+    );
+  }
+
+  return combinations;
+}
+----------------------------------------------------------------------
+if (profit >= gasFee) {
+            profit -= gasFee;
+        } else {
+            profit = 0; // Ensure profit cannot be negative
+        }
+        -------------------------------------------------------------------------------------------
+
+        import { ethers } from 'hardhat';
+import { FlashArbitrageV3 } from '../typechain/FlashArbitrageV3';
+import { Vault } from '../typechain/Vault';
+import { expect } from 'chai';
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { IUniswapV3Factory } from '../typechain/IUniswapV3Factory';
+import { Mock } from '../typechain/Mock';
+describe('Flash Arbitrage', function () {
+  let flashContract: FlashArbitrageV3;
+  let vaultContract: Vault;
+  let signer: SignerWithAddress;
+  let uniswapFactory: IUniswapV3Factory;
+  let mockFactory: MockUniswapV3Factory;
+  let mockPoolAB: MockUniswapV3Pool;
+  let mockPoolBC: MockUniswapV3Pool;
+  let mockPoolCA: MockUniswapV3Pool;
+  const posman = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
+  const WMATIC = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270';
+  const uniRout = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+  const USDT = '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'; //wmatic
+  const ETH = '0xb33eaad8d922b1083446dc23f610c2567fb5180f'; //uni
+  const UNI = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619'; //quic
+
+  before(async function () {
+        [signer] = await ethers.getSigners();
+        const MockFactory = await ethers.getContractFactory('MockUniswapV3Factory');
+        const MockPool = await ethers.getContractFactory('MockUniswapV3Pool');
+
+        mockFactory = await MockFactory.deploy();
+        mockPoolAB = await MockPool.deploy(1234567890, 100, 1000);
+        mockPoolBC = await MockPool.deploy(1234567890, 100, 1000);
+        mockPoolCA = await MockPool.deploy(1234567890, 100, 1000);
+
+        await mockFactory.setPool(USDT, ETH, 500, mockPoolAB.address);
+        await mockFactory.setPool(ETH, UNI, 500, mockPoolBC.address);
+        await mockFactory.setPool(UNI, USDT, 500, mockPoolCA.address);
+        const FlashContract = await ethers.getContractFactory('FlashArbitrageV3');
+        const VaultContract = await ethers.getContractFactory('Vault');
+        vaultContract = (await VaultContract.deploy(USDT, ETH, UNI)) as Vault;
+        flashContract = (await FlashContract.deploy(WMATIC, uniRout, posman)) as FlashArbitrageV3;
+        console.log("Contract deployed to address:", flashContract.address);
+        console.log("Contract deployed to address:", vaultContract.address);
+        uniswapFactory = await ethers.getContractAt('IUniswapV3Factory', uniRout); 
+  });
+
+  it('should add and remove base tokens correctly', async function () {
+    const newToken = '0x0000000000000000000000000000000000000001';
+    await flashContract.addBaseToken(newToken);
+    let baseTokens = await flashContract.getBaseTokens();
+    expect(baseTokens).to.include(newToken);
+
+    await flashContract.removeBaseToken(newToken);
+    baseTokens = await flashContract.getBaseTokens();
+    expect(baseTokens).to.not.include(newToken);
+  });
+
+  it('should revert if trying to perform flash arbitrage with invalid token paths', async function () {
+    const invalidTokenA = USDT;
+    const invalidTokenB = ETH;
+    const invalidTokenC = UNI;
+    const gasFee = 100;
+    const amountIn = 1000;
+
+    await expect(
+      flashContract.executeFlashArbitrage(invalidTokenA, invalidTokenB, invalidTokenC, amountIn, 0, gasFee, vaultContract.address)
+    ).to.be.reverted;
+  });
+
+  it('should revert if trying to perform flash arbitrage with insufficient input amount', async function () {
+    const tokenA = USDT;
+    const tokenB = ETH;
+    const tokenC = UNI;
+    const gasFee = 100;
+    const insufficientAmountIn = 10;
+
+    await expect(
+      flashContract.executeFlashArbitrage(tokenA, tokenB, tokenC, insufficientAmountIn, 0, gasFee, vaultContract.address)
+    ).to.be.reverted;
+  });
+
+  it('should calculate profit correctly', async function () {
+    const baseTokens = await flashContract.getBaseTokens();
+    console.log('Base Tokens:', baseTokens);
+
+    for (const tokenA of baseTokens) {
+      for (const tokenB of baseTokens) {
+        if (tokenA === tokenB) continue;
+
+        const gasFee = 1;
+        const profit = await flashContract.getProfit(tokenA, tokenB, gasFee, vaultContract.address);
+        console.log(`Profit for pair ${tokenA}, ${tokenB}: ${profit}`);
+        
+        expect(profit).to.be.gte(0);
+      }
+    }
+  });
+
+  it('should execute flash arbitrage correctly', async function () {
+    const tokenA = USDT;
+    const tokenB = ETH;
+    const tokenC = UNI;
+    const gasFee = 1;
+
+    const pairAddressAB = await uniswapFactory.getPool(tokenA, tokenB, 500);
+    const pairAddressBC = await uniswapFactory.getPool(tokenB, tokenC, 500);
+    const pairAddressCA = await uniswapFactory.getPool(tokenC, tokenA, 500);
+
+    console.log('Pair Address AB:', pairAddressAB);
+    console.log('Pair Address BC:', pairAddressBC);
+    console.log('Pair Address CA:', pairAddressCA);
+
+    if (!pairAddressAB || !pairAddressBC || !pairAddressCA) {
+      console.error("One or more pair addresses are invalid. Exiting test.");
+      return;
+    }
+    // Get the reserves of the token pairs
+    const reservesAB = await flashContract.getOrderedReserves(tokenA, tokenB, vaultContract.address);
+    const reservesBC = await flashContract.getOrderedReserves(tokenB, tokenC, vaultContract.address);
+    const reservesCA = await flashContract.getOrderedReserves(tokenC, tokenA, vaultContract.address);
+    
+    console.log("Reserves AB:", reservesAB);
+    console.log("Reserves BC:", reservesBC);
+    console.log("Reserves CA:", reservesCA);
+
+    // Check if reserves are valid
+    if (!reservesAB || !reservesBC || !reservesCA) {
+      console.error("One or more reserve values are invalid. Exiting test.");
+      return;
+    }
+
+    const amountIn = 10; // Set a reasonable amount for testing
+
+    await flashContract.executeFlashArbitrage(tokenA, tokenB, tokenC, amountIn, 0, gasFee, vaultContract.address);
+    expect(await flashContract.getTokenBalance(tokenA)).to.equal(0);
+    expect(await flashContract.getTokenBalance(tokenB)).to.equal(0);
+    expect(await flashContract.getTokenBalance(tokenC)).to.equal(0);
+  });
+});

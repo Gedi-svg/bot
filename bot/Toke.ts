@@ -3,6 +3,7 @@ import path from 'path';
 import { Contract } from '@ethersproject/contracts';
 import { ethers } from 'hardhat';
 import log from './log';
+import { IUniswapV3Factory } from '../typechain/IUniswapV3Factory';
 
 export enum Network {
   POLYGON = 'polygon',
@@ -28,7 +29,7 @@ export interface TokenCombination {
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
-
+const uniRout = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 const polygonBaseTokens: Tokens = {
   wmatic: { symbol: 'WMATIC', address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' },
   usdt: { symbol: 'USDT', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' },
@@ -98,26 +99,32 @@ async function updateCombinations(network: Network): Promise<TokenCombination[]>
     }
   }
 
-  // Fetch pair addresses for each combination
-  let factories: Contract[] = [];
-  const factoryAddrs = getFactories(network);
-  for (const key in factoryAddrs) {
-    const addr = factoryAddrs[key];
-    const factory = new ethers.Contract(addr, ['function getPair(address, address) view returns (address pair)'], ethers.provider);
-    factories.push(factory);
-  }
+  // Initialize Uniswap V3 factory
+  //const factoryAddress = getUniswapV3FactoryAddress(network); // Get the factory address for the network
+  const uniswapFactory: IUniswapV3Factory = await ethers.getContractAt('IUniswapV3Factory', uniRout);
 
+  // Fetch pool addresses for each combination
   for (const combination of combinations) {
-    const [pair0, pair1, pair2] = await Promise.all([
-      factories[0].getPair(combination.addresses[0], combination.addresses[1]),
-      factories[1].getPair(combination.addresses[1], combination.addresses[2]),
-      factories[2].getPair(combination.addresses[2], combination.addresses[0])
-    ]);
-    combination.pairs.push(pair0, pair1, pair2);
+    try {
+      const [pool0, pool1, pool2] = await Promise.all([
+        uniswapFactory.getPool(combination.addresses[0], combination.addresses[1], 500),
+        uniswapFactory.getPool(combination.addresses[1], combination.addresses[2], 500),
+        uniswapFactory.getPool(combination.addresses[2], combination.addresses[0], 500)
+      ]);
+
+      // Only add non-zero addresses (valid pools) to the pairs array
+      if (pool0 !== ethers.constants.AddressZero) combination.pairs.push(pool0);
+      if (pool1 !== ethers.constants.AddressZero) combination.pairs.push(pool1);
+      if (pool2 !== ethers.constants.AddressZero) combination.pairs.push(pool2);
+
+    } catch (error) {
+      log.error(`Failed to fetch pools for ${combination.symbols}: ${error.message}`);
+    }
   }
 
   return combinations;
 }
+
 
 
 
