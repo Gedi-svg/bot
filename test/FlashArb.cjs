@@ -13,8 +13,7 @@ const alchemy = new Alchemy({
     network: Network.MATIC_MAINNET,
 });*/
 // Set up GraphQL client for Uniswap V3 subgraph
-const graphClient = new GraphQLClient("https://gateway.thegraph.com/api/a3b0cf80798ffdc9fa07f665b44aa809/subgraphs/id/3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm");
-
+const graphClient = new GraphQLClient("https://gateway.thegraph.com/api/505cbefd36ed83f93bb586fbd80cb308/subgraphs/id/HMcqgvDY6f4MpnRSJqUUsBPHePj8Hq3AxiDBfDUrWs15");
 // Set up provider and wallet
 const provider = new ethers.providers.JsonRpcProvider({
     url: "https://polygon-mainnet.g.alchemy.com/v2/DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG",
@@ -25,10 +24,10 @@ const provider = new ethers.providers.JsonRpcProvider({
 //const provider = new ethers.providers.AlchemyProvider("mainnet", "DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG");
 //0x76E66845076A83B9BE2B1A023b7e45eA12691fD2
 
-const wallet = new ethers.Wallet("0xc1101453fdd090e6cf6f3bc2f56564dd8e7c277e76c711ada47e45721fd9ab51", provider); // Replace with your private key
+const wallet = new ethers.Wallet("0x1d93f5f3e693e6e911fef7f3382eda92ad344e27b3186e59b21665eb299357b0", provider); // Replace with your private key
 
 // Contract addresses
-const flashArbitrageAddress = "0x76E66845076A83B9BE2B1A023b7e45eA12691fD2";
+const flashArbitrageAddress = "0x176B50Ce65Ab6676f32A3B5364c3F5408Cf21149";
 const factoryAddress = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 
 

@@ -14,21 +14,21 @@ async function main() {
   await run("compile");
 
   // Get the contract factory
-  const FlashBot = await ethers.getContractFactory("FlashArbitrageVn");
+  const FlashBot = await ethers.getContractFactory("FlashArbitrageVn0");
 
   // Deploy the contract
-  const flashBot = await FlashBot.deploy(WmaticAddr, factory, uniRout, posman, quoter);//, {
-   // gasPrice: ethers.utils.parseUnits("150", "gwei"),
-   // gasLimit: 17000000,
- // });
+  const flashBot = await FlashBot.deploy(WmaticAddr, factory, uniRout, posman, quoter, {
+    gasPrice: ethers.utils.parseUnits("70", "gwei"),
+    gasLimit: 17000000,
+  });
 
   // Wait for the deployment transaction to be mined
- // const receipt = await flashBot.deployTransaction.wait();
+  const receipt = await flashBot.deployTransaction.wait();
 
   // Log the transaction hash, block number, and deployed address
   console.log(`FlashBot deployed to: ${flashBot.address}`);
-  //console.log(`Transaction hash: ${receipt.transactionHash}`);
-  //console.log(`Deployed in block: ${receipt.blockNumber}`);
+  console.log(`Transaction hash: ${receipt.transactionHash}`);
+  console.log(`Deployed in block: ${receipt.blockNumber}`);
 }
 
 main()

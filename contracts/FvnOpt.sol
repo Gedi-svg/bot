@@ -29,7 +29,7 @@ interface IWETH {
     function withdraw(uint) external;
 }
 
-contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutableState, PeripheryPayments, ReentrancyGuard {
+contract FlashArbitrageVn0 is Ownable, IUniswapV3FlashCallback, PeripheryImmutableState, PeripheryPayments, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
     using LowGasSafeMath for uint256;
@@ -40,7 +40,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
     address immutable nonfungiblePositionManager;
     IQuoterV2 public quoterContract;
     address permissionedPairAddress = address(1);
-    mapping(address => address) public tokenToPriceFeed; // Token to Chainlink price feed
+    mapping(address => address) public tokenToPriceFeed;
 
     EnumerableSet.AddressSet baseTokens;
 
@@ -80,6 +80,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
         uint24[] poolFees;
         address[] path;
         address flashPool;
+        uint256 debtAmount;
     }
 
     struct ReserveData {
@@ -235,7 +236,8 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
     function executeArbitrage(
         address[] memory path,
         uint256[] memory borrowAmounts,
-        PoolData memory poolData
+        PoolData memory poolData,
+        uint256 debtAmount
     ) internal {
         require(borrowAmounts.length == poolData.poolAddresses.length, "Borrow amounts must match pools");
         require(path.length == poolData.poolAddresses.length + 1, "Path length must match pools + 1");
@@ -247,9 +249,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
         }
 
         address cycleToken = path[0];
-       // require(IERC20(cycleToken).balanceOf(address(this)) >= borrowAmounts[0], "Insufficient balance");
-
-        executeSwap(path, borrowAmounts[0], poolData.profits[0], arbInfo);
+        executeSwap(path, borrowAmounts[0], poolData.profits[0], arbInfo, debtAmount);
     }
 
     function validateTokenPath(address[] memory path, ArbitrageInfo memory arbInfo) internal returns (bool) {
@@ -282,7 +282,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
             (, int256 price, , uint256 updatedAt, ) = AggregatorV3Interface(feed).latestRoundData();
             require(price > 0, "Invalid Chainlink price");
             require(block.timestamp - updatedAt <= 3600, "Stale Chainlink price");
-            uint256 expectedAmount = uint256(price) * debtAmount / 1e8; // Adjust for 8 decimals
+            uint256 expectedAmount = uint256(price) * debtAmount / 1e8;
             require(debtAmount <= expectedAmount * 105 / 100, "Price deviation too high");
             return expectedAmount;
         }
@@ -297,17 +297,15 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
         IUniswapV3Pool pool = IUniswapV3Pool(flashPool);
         address token0 = pool.token0();
         address token1 = pool.token1();
-        uint24 fee = pool.fee(); // Dynamically fetch fee
+        uint24 fee = pool.fee();
         bool borrowToken0 = path[0] == token0;
         address cycleToken = borrowToken0 ? token0 : token1;
-
 
         swapPath = constructSwapPath(path, flashPool, cycleToken);
         require(swapPath.length >= 2, "Swap path too short");
         require(swapPath[0] == swapPath[swapPath.length - 1], "Swap path must form a cycle");
         require(swapPath[0] == cycleToken, "Swap path must start with cycle token");
 
-        // Ensure canonical token order for poolKey
         PoolAddress.PoolKey memory poolKey = PoolAddress.PoolKey({
             token0: token0 < token1 ? token0 : token1,
             token1: token0 < token1 ? token1 : token0,
@@ -329,7 +327,8 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
             poolKey: poolKey,
             poolFees: poolFees,
             path: swapPath,
-            flashPool: flashPool
+            flashPool: flashPool,
+            debtAmount: debtAmount
         });
 
         return (callbackData, swapPath);
@@ -354,12 +353,13 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
         address[] memory path,
         uint256 amountIn,
         uint256 expectedProfit,
-        ArbitrageInfo memory arbInfo
+        ArbitrageInfo memory arbInfo,
+        uint256 debtAmount
     ) internal {
         uint256 minOutput = expectedProfit > 0 ? expectedProfit : 1;
         address flashPool = arbInfo.sortedPools[0];
 
-        uint256 debtAmount = getAmountInWithQuoterV2MultiHop(minOutput, path);
+        debtAmount = debtAmount > 0 ? debtAmount : getAmountInWithQuoterV2MultiHop(minOutput, path);
         debtAmount = debtAmount * 101 / 100; // 1% slippage buffer
 
         validatePrice(path[0], debtAmount);
@@ -429,13 +429,13 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
 
         address token0 = decoded.poolKey.token0;
         address token1 = decoded.poolKey.token1;
-        uint256 amount0Owed = fee0 > 0 ? decoded.amounts[0].add(fee0) : 0;
-        uint256 amount1Owed = fee1 > 0 ? decoded.amounts[0].add(fee1) : 0;
+        uint256 amount0Owed = fee0 > 0 ? decoded.debtAmount.add(fee0) : 0;
+        uint256 amount1Owed = fee1 > 0 ? decoded.debtAmount.add(fee1) : 0;
         address borrowedToken = amount0Owed > 0 ? token0 : token1;
         uint256 amountOwed = amount0Owed > 0 ? amount0Owed : amount1Owed;
 
         address[] memory path = decoded.path;
-        uint256 outputAmount = decoded.amounts[0];
+        uint256 outputAmount = decoded.debtAmount;
 
         for (uint256 i = 0; i < path.length - 1; i++) {
             address inputToken = path[i];
@@ -460,7 +460,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
         }
 
         permissionedPairAddress = address(1);
-        emit FlashArbitrageExecuted(decoded.amounts[0], outputAmount);
+        emit FlashArbitrageExecuted(decoded.debtAmount, outputAmount);
     }
 
     function repayWithApproval(address token, uint256 amountOwed) private {
@@ -513,15 +513,16 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
     function executeFlashArbitrage(
         address[] calldata path,
         uint256[] calldata borrowAmounts,
-        PoolData calldata poolData
+        PoolData calldata poolData,
+        uint256 debtAmount
     ) external onlyOwner {
-        executeArbitrage(path, borrowAmounts, poolData);
+        executeArbitrage(path, borrowAmounts, poolData, debtAmount);
     }
 
     function getAmountInWithQuoterV2MultiHop(
         uint256 amountOut,
         address[] memory path
-    ) public returns (uint256 amountIn) {
+    ) internal returns (uint256 amountIn) {
         bytes memory encodedPath = encodeMultiHopPath(path);
         uint160[] memory sqrtPriceX96AfterList;
         uint32[] memory initializedTicksCrossedList;
@@ -532,7 +533,7 @@ contract FlashArbitrageVn is Ownable, IUniswapV3FlashCallback, PeripheryImmutabl
     function getAmountOutWithQuoterV2MultiHop(
         uint256 amountIn,
         address[] memory path
-    ) public returns (uint256 amountOut) {
+    ) internal returns (uint256 amountOut) {
         bytes memory encodedPath = encodeMultiHopPath(path);
         uint160[] memory sqrtPriceX96After;
         uint32[] memory initializedTicksCrossed;
