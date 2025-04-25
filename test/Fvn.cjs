@@ -14,7 +14,7 @@ const provider = new ethers.providers.JsonRpcProvider({
     timeout: 500000,
 });
 
-const wallet = new ethers.Wallet("0x1d93f5f3e693e6e911fef7f3382eda92ad344e27b3186e59b21665eb299357b0", provider);
+const wallet = new ethers.Wallet("", provider);
 
 const flashArbitrageAddress = "0x1C0e1960f3dBF98d123A02768eC128B466157978"; // Replace after deployment
 const factoryAddress = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
