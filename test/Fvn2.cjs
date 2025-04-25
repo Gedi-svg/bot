@@ -12,7 +12,7 @@ const provider = new ethers.providers.JsonRpcProvider({
     url: "https://polygon-mainnet.g.alchemy.com/v2/DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG",
     timeout: 500000,
 });
-const wallet = new ethers.Wallet("0x1d93f5f3e693e6e911fef7f3382eda92ad344e27b3186e59b21665eb299357b0", provider);
+const wallet = new ethers.Wallet("", provider);
 
 const flashArbitrageAddress = "0x0074e4a57DC1D4C5E63f952Ef6d715F41A4C1A90";
 const factoryAddress = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
