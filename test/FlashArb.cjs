@@ -24,7 +24,7 @@ const provider = new ethers.providers.JsonRpcProvider({
 //const provider = new ethers.providers.AlchemyProvider("mainnet", "DcqRhPPSW0upcwmCtR8oa3Pb2clizqgG");
 //0x76E66845076A83B9BE2B1A023b7e45eA12691fD2
 
-const wallet = new ethers.Wallet("0x1d93f5f3e693e6e911fef7f3382eda92ad344e27b3186e59b21665eb299357b0", provider); // Replace with your private key
+const wallet = new ethers.Wallet("", provider); // Replace with your private key
 
 // Contract addresses
 const flashArbitrageAddress = "0x176B50Ce65Ab6676f32A3B5364c3F5408Cf21149";
