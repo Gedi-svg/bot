@@ -369,84 +369,7 @@ contract FlashArbitrage is Ownable {
     }
 
 
-/*
-      function calcBorrowAmount(OrderedReserves memory reserves) internal pure returns (uint256 amount) {
-        // Ensure each pool has at least one reserve in its respective token
-        require(reserves.a1 > 0 || reserves.b1 > 0, "Pool 1 must have reserves");
-        require(reserves.a2 > 0 || reserves.b2 > 0, "Pool 2 must have reserves");
-        require(reserves.a3 > 0 || reserves.b3 > 0, "Pool 3 must have reserves");
 
-        // Calculate minimum values from the reserves
-        uint256 min1 = reserves.a1 < reserves.b1 ? reserves.a1 : reserves.b1; // Min for Pool 1
-        uint256 min2 = reserves.a2 < reserves.b2 ? reserves.a2 : reserves.b2; // Min for Pool 2
-        uint256 min3 = reserves.a3 < reserves.b3 ? reserves.a3 : reserves.b3; // Min for Pool 3
-
-        // Find the overall minimum
-        uint256 min = min1 < min2 ? (min1 < min3 ? min1 : min3) : (min2 < min3 ? min2 : min3);
-
-        // Set the scale divisor based on the minimum value
-        uint256 d;
-        if (min > 1e24) {
-            d = 1e20;
-        } else if (min > 1e23) {
-            d = 1e19;
-        } else if (min > 1e22) {
-            d = 1e18;
-        } else if (min > 1e21) {
-            d = 1e17;
-        } else if (min > 1e20) {
-            d = 1e16;
-        } else if (min > 1e19) {
-            d = 1e15;
-        } else if (min > 1e18) {
-            d = 1e14;
-        } else if (min > 1e17) {
-            d = 1e13;
-        } else if (min > 1e16) {
-            d = 1e12;
-        } else if (min > 1e15) {
-            d = 1e11;
-        } else {
-            d = 1e10;
-        }
-
-        // Scale the reserves for calculation
-        int256[3] memory scaledA = [
-            int256(reserves.a1 / d), 
-            int256(reserves.a2 / d), 
-            int256(reserves.a3 / d)
-        ];
-
-        int256[3] memory scaledB = [
-            int256(reserves.b1 / d), 
-            int256(reserves.b2 / d), 
-            int256(reserves.b3 / d)
-        ];
-
-        // Ensure that neither scaledA nor scaledB are both zero
-        require(scaledA[0] != 0 || scaledB[0] != 0, "Both scaledA[0] and scaledB[0] cannot be zero");
-        require(scaledA[1] != 0 || scaledB[1] != 0, "Both scaledA[1] and scaledB[1] cannot be zero");
-        require(scaledA[2] != 0 || scaledB[2] != 0, "Both scaledA[2] and scaledB[2] cannot be zero");
-
-        // Coefficient calculations for profit optimization
-        int256 a = scaledA[0] * scaledB[1] - scaledA[1] * scaledB[0] + scaledA[2] * scaledB[2]; // Adjusted to match relationships
-        int256 b = 2 * (scaledB[0] * scaledB[1] + scaledB[1] * scaledB[2] + scaledB[2] * scaledB[0]);
-        int256 c = scaledB[0] * scaledB[1] * (scaledA[1] * scaledB[0] - scaledA[0] * scaledB[1]) + 
-                    scaledB[1] * scaledB[2] * (scaledA[2] * scaledB[1] - scaledA[1] * scaledB[2]) + 
-                    scaledB[2] * scaledB[0] * (scaledA[0] * scaledB[2] - scaledA[2] * scaledB[0]);
-
-        // Quadratic equation case
-        (int256 x1, int256 x2) = calcSolutionForQuadratic(a, b, c);
-
-        // Check for valid solutions
-        bool validX1 = (x1 > 0 && x1 < scaledB[0] && x1 < scaledB[1] && x1 < scaledB[2]);
-        bool validX2 = (x2 > 0 && x2 < scaledB[0] && x2 < scaledB[1] && x2 < scaledB[2]);
-
-        require(validX1 || validX2, 'No valid borrow amount found');
-
-        // Return the appropriate borrow amount
-        amount = uint256(validX1 ? x1 : x2) * d;
-    }*/
     function calcBorrowAmount(OrderedReserves memory reserves) internal pure returns (uint256 amount) {
         // Step 1: Get the minimum of each reserve pair
         uint256 min1 = getMinimum(reserves.a1, reserves.b1);
@@ -490,29 +413,23 @@ contract FlashArbitrage is Ownable {
         else d = 1e10;
     }
 
-    // Updated calculateA, B, and C to prevent division by zero
     function calculateA(OrderedReserves memory reserves, uint256 d) internal pure returns (int256) {
-        // Perform multiplication first, then divide by 'd' at the end to preserve precision
-        return (int256(reserves.a1) * int256(reserves.b1) 
-                - int256(reserves.a2) * int256(reserves.b2) 
-                + int256(reserves.a3) * int256(reserves.b3)) / int256(d * d);
+        return int256(reserves.a1 / d) * int256(reserves.b1 / d) 
+            - int256(reserves.a2 / d) * int256(reserves.b2 / d)
+            + int256(reserves.a3 / d) * int256(reserves.b3 / d);
     }
 
-
     function calculateB(OrderedReserves memory reserves, uint256 d) internal pure returns (int256) {
-        // Perform multiplication first, then divide by d^3 at the end to preserve precision
-        return (2 * int256(reserves.b1) * int256(reserves.b2) * int256(reserves.b3)
-                * (int256(reserves.a1) + int256(reserves.a2) + int256(reserves.a3))) / int256(d**3);
+        return 2 * int256(reserves.b1 / d) * int256(reserves.b2 / d) * int256(reserves.b3 / d)
+            * (int256(reserves.a1 / d) + int256(reserves.a2 / d) + int256(reserves.a3 / d));
     }
 
     function calculateC(OrderedReserves memory reserves, uint256 d) internal pure returns (int256) {
-        // Perform multiplication first, then divide by d^6 at the end to preserve precision
-        return (int256(reserves.b1) * int256(reserves.b2) * int256(reserves.b3)
-                * (int256(reserves.a1) * int256(reserves.b2) * int256(reserves.b3)
-                - int256(reserves.a2) * int256(reserves.b1) * int256(reserves.b3)
-                + int256(reserves.a3) * int256(reserves.b1) * int256(reserves.b2))) / int256(d**6);
+        return int256(reserves.b1 / d) * int256(reserves.b2 / d) * int256(reserves.b3 / d)
+            * (int256(reserves.a1 / d) * int256(reserves.b2 / d) * int256(reserves.b3 / d)
+            - int256(reserves.a2 / d) * int256(reserves.b1 / d) * int256(reserves.b3 / d)
+            + int256(reserves.a3 / d) * int256(reserves.b1 / d) * int256(reserves.b2 / d));
     }
-
 
     function isValidSolution(int256 x, OrderedReserves memory reserves, uint256 d) internal pure returns (bool) {
         return x > 0 && x < int256(reserves.b1 / d) && x < int256(reserves.b2 / d) && x < int256(reserves.b3 / d);
